@@ -1,0 +1,8 @@
+pandas==2.*
+statsmodels==0.14.*
+matplotlib==3.9
+ipywidgets==8.*
+pytest==8.*
+yfinance==0.2.31
+scikit-learn==1.*
+ipykernel==6.*
