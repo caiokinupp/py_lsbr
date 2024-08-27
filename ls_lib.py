@@ -1,7 +1,6 @@
 # Python
 # Third
 # Property
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from statsmodels.tsa.ar_model import AutoReg
@@ -17,50 +16,6 @@ pd.set_option("display.max_rows", 150)
 
 # Parameters
 PATH_LS_DATA = "ls_data/"
-
-
-def get_yahoo_asset_data(lst_stock_tickers, start_date, end_date):
-    lst_assets = []
-    for ticker in lst_stock_tickers:
-        df_stock = yf.download(
-            ticker + ".SA", start=start_date, end=end_date, progress=False
-        )
-
-        if len(df_stock) != 0:
-            df_stock = df_stock.loc[:, ["Adj Close"]]
-            df_stock.loc[:, "ticker"] = ticker
-            lst_assets.append(df_stock)
-
-    return pd.concat(lst_assets)
-
-
-def pivote_asset_data(df):
-    # Reseting index to pivoting
-    df.reset_index(inplace=True)
-
-    # Pivoting Data
-    df = df.pivot(index="Date", columns="ticker", values="Adj Close")
-
-    # Renaming index
-    df.index.names = ["date"]
-
-    # Fill NA
-    df = df.fillna(method="ffill")
-
-    return df
-
-
-def create_long_short_dataset(lst_stock_tickers, start_date, end_date, source="yahoo"):
-    if source == "yahoo":
-        df = get_yahoo_asset_data(
-            lst_stock_tickers=lst_stock_tickers,
-            start_date="2018-01-01",
-            end_date=end_date,
-        )
-        df = pivote_asset_data(df)
-        df.to_csv(PATH_LS_DATA + "yahoo_long_short_data.csv")
-    else:
-        pass
 
 
 def load_long_short_dataset(max_date=None, source="yahoo"):
@@ -166,13 +121,13 @@ def normalize_column(df, column_name):
     return df[column_name]
 
 
-def calculatePairResiduals(args):
+def calculatePairStats(args):
     df_stocks = args["dataset"]
     pair = args["pair"]
     periods = args["periods"]
     date_col = args["date_col"]
 
-    column_names = ["pair", "adf", "beta", "desv", "halflife", "p_value"]
+    column_names = ["pair", "adf", "beta", "desv", "op_type", "halflife", "p_value"]
 
     asset1 = pair.split("/")[0]
     asset2 = pair.split("/")[1]
@@ -201,23 +156,28 @@ def calculatePairResiduals(args):
     adf = adfuller(df_res[pair])
     beta = np.round(linear_regressor.coef_[0][0], 2)
     desv = np.round(((df_res[pair].iloc[0] - mean) / std), 2)
+    op_type = "V" if desv > 0 else "V"
     half_life = calculate_half_life(df_res, pair)
 
-    lst_values = [pair, adf[0], beta, desv, half_life, np.round((1 - adf[1]) * 100, 2)]
+    lst_values = [
+        pair,
+        adf[0],
+        abs(beta),
+        desv,
+        op_type,
+        half_life,
+        np.round((1 - adf[1]) * 100, 2),
+    ]
     df_stats = pd.DataFrame([lst_values], columns=column_names)
 
     return df_stats
 
 
-def getPairsResiduals(args, df_stocks, date_col, periods, workers):
+def getPairsStats(args, workers):
     combined_stats = pd.DataFrame()
-    df_residuals = pd.DataFrame()
-
-    df_residuals[date_col] = df_stocks[date_col].sort_values(ascending=False)[:periods]
-
     with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
         # Submit tasks to the executor
-        results = [executor.submit(calculatePairResiduals, arg) for arg in args]
+        results = [executor.submit(calculatePairStats, arg) for arg in args]
 
     # Retrieve results as they become available
     for future in concurrent.futures.as_completed(results):
